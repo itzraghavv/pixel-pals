@@ -1,6 +1,8 @@
-# 04 — Audio/Video & Chat PRD
+# 04 — Chat & Audio/Video PRD
 
 **Status:** Draft · **Components:** `realtime`, `api`, LiveKit, `web`
+
+> **Scope note:** Text chat (§4.2) is **core** and ships with the proximity milestone. Audio/video (§3, §4.1) is a **stretch goal**: it's built only after the infra milestones and the chosen unique features, and the requirement priorities below are relative to that stretch milestone.
 
 ## 1. Goals
 

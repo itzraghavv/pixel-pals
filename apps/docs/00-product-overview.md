@@ -2,64 +2,64 @@
 
 **Status:** Draft · **Owner:** @itzraghavv · **Last updated:** 2026-10-30
 
-## 1. Problem
+## 1. What Pixel Pals is
 
-Remote teams lose the "ambient" part of being in an office: seeing who is around, bumping into someone, walking over to a desk for a quick chat. Video-call tools are scheduled and binary — you are either in a meeting or invisible.
-
-Spatial platforms like Gather solve this with a 2D, game-like world where **position = context**: walk up to someone to talk, walk away to leave.
+A small realtime 2D world where **position = context**: you see who's around, walk up to people and chat with whoever is nearby. The idea comes from spatial platforms like Gather, but Pixel Pals doesn't try to copy them feature for feature.
 
 ## 2. Why this project
 
-This is a portfolio and learning project. The goal is to understand, end to end, how a realtime multiplayer product is built and run:
+This is a portfolio and learning project. **The infrastructure is the product.** The goal is to understand, end to end, how a realtime multiplayer system is built and run:
 
 - A stateless REST API and a stateful realtime service, and why they are separate.
 - Authoritative server-side movement and broadcasting in Go.
 - Scaling WebSocket rooms across multiple instances with Redis.
-- WebRTC through an SFU for proximity audio/video.
 - A canvas-rendered client that stays in sync with the server.
-- Containerised deployment, CI/CD and observability.
+- Containerised deployment, CI/CD, load testing and observability.
 
-Success is measured by **working software and clear docs**, not users or revenue.
+The user-facing features stay minimal until that foundation works. After that, a few **unique features** give the project its own identity (see [07 — Feature Ideas](./07-feature-ideas.md); not chosen yet).
+
+Success is measured by **working software, measurable performance and clear docs**, not users or revenue.
 
 ## 3. Personas
 
 | Persona | Description | Main jobs |
 |---------|-------------|-----------|
-| **Member** | Regular user who joins spaces | Sign up, pick an avatar, join a space, walk around, talk to people nearby |
+| **Member** | Regular user who joins spaces | Sign up, pick an avatar, join a space, walk around, chat with people nearby |
 | **Space owner** | Member who creates spaces | Create a space from a map template or blank, place/remove furniture, invite people, delete space |
 | **Admin** | Platform operator | Manage the global catalogue: avatars, elements (furniture/objects), map templates |
-| **Guest** *(P2)* | Unauthenticated invitee | Join a space through an invite link with a display name |
 
 ## 4. Core user journeys
 
 1. **Onboard:** Sign up → sign in → choose avatar → land on dashboard.
-2. **Create a space:** Dashboard → "New space" → pick a map template (or blank + dimensions) → name it → space is created with the template's elements.
-3. **Decorate:** Open the space editor → drag elements from the catalogue onto the grid → remove elements → save.
-4. **Hang out:** Join a space → see own avatar and others → move with arrow keys/WASD → see others move in real time.
-5. **Talk:** Walk near someone → audio/video tiles appear automatically → walk away → they disappear. Text chat in the space at all times.
-6. **Administer:** Admin console → upload avatar/element images → build map templates.
+2. **Create a space:** Dashboard → "New space" → pick a map template (or blank + dimensions) → name it.
+3. **Hang out:** Join a space → see own avatar and others → move with arrow keys/WASD → see others move in real time.
+4. **Chat:** Space-wide chat at all times; a "nearby" channel for whoever is within a few tiles.
+5. **Decorate** *(P1)***:** Place and remove elements in your space.
+6. **Administer:** Seed or upload avatars, elements and map templates.
 
 ## 5. Scope
 
-### In scope (v1)
+### Core (v1)
 
 - Username/password auth with JWT access + refresh tokens.
-- Avatars, elements, map templates (admin-managed catalogue).
+- Avatars, elements, map templates (admin-managed catalogue; seeding via CLI is enough at first).
 - Spaces: create (blank or from map), list mine, view, delete; add/remove elements.
-- Realtime: join space, authoritative grid movement, collision with static elements, join/leave/move broadcasts.
-- Proximity detection and proximity A/V via LiveKit.
-- Space-wide text chat.
-- Web client: auth pages, dashboard, world canvas, space editor, admin console.
-- Docker Compose for local dev; one-click deploy of the full stack; CI with tests.
+- Realtime: join space, authoritative grid movement, collision, join/leave/move broadcasts, proximity groups.
+- Text chat: space-wide and proximity-scoped.
+- Web client: auth pages, dashboard, world canvas. A simple editor and admin console come after.
+- **Infra:** Docker Compose, CI with tests, multiple realtime nodes, metrics/tracing, load tests, public deployment.
 
-### Non-goals (v1)
+### Later
 
+- 1–3 unique features picked from [07 — Feature Ideas](./07-feature-ideas.md).
+- Proximity audio/video via LiveKit (**stretch**, see [04](./04-av-chat-prd.md)).
+
+### Non-goals
+
+- Feature parity with Gather: mapmaker, embedded websites/games, whiteboards, recordings, screen sharing.
 - Native mobile apps.
 - OAuth / SSO providers (P2).
 - Paid plans, billing, multi-tenant orgs.
-- Tiled-map importer and full map-making tool on par with Gather's mapmaker.
-- Screen sharing (P2), recordings, whiteboards, embedded websites/games.
-- End-to-end encryption of media.
 
 ## 6. Success metrics (engineering)
 
@@ -68,8 +68,8 @@ Success is measured by **working software and clear docs**, not users or revenue
 | Movement round-trip (client → server → other clients), same region | p95 < 100 ms |
 | Concurrent users per space | ≥ 50 smooth on a single realtime node |
 | Concurrent users total (load test, 2 realtime nodes) | ≥ 1,000 |
-| Time from "walk up to someone" to hearing them | < 1.5 s |
 | API p95 latency (non-upload) | < 50 ms |
+| Realtime node restart: clients back in their space | < 5 s |
 | Backend test coverage of handlers/services | ≥ 70% |
 | Cold start of full local stack (`docker compose up`) | < 2 min |
 
@@ -80,13 +80,13 @@ Success is measured by **working software and clear docs**, not users or revenue
 - **Space** — a user-owned instance of a world. Created from a map (copying its elements) or blank.
 - **Room** — the in-memory realtime representation of a space on a realtime node.
 - **Tile** — one grid cell. All positions are integer tile coordinates.
-- **Proximity group** — the set of users within *N* tiles of each other who should hear/see one another.
+- **Proximity group** — the set of users within *N* tiles of each other; used for nearby chat (and A/V if built).
 
 ## 8. Risks
 
 | Risk | Mitigation |
 |------|-----------|
-| WebRTC complexity balloons scope | Use LiveKit SFU instead of hand-rolled mesh; A/V is its own milestone |
+| Scope creep toward a full Gather clone | Core surface is fixed above; anything new goes into [07](./07-feature-ideas.md) first |
+| WebRTC complexity | A/V is a stretch goal, built only after infra and unique features |
 | Realtime state lost on node restart | Positions are ephemeral by design; clients auto-rejoin with backoff |
 | Asset hosting costs | MinIO locally, small S3/R2 bucket in prod, size limits on uploads |
-| Scope creep from "replicate Gather" | Strict P0/P1/P2 tagging and milestone exit criteria |

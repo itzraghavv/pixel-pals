@@ -45,7 +45,7 @@ Both Go services share one module so `auth`, `store` and `config` are reused; th
 
 | ID | Pri | Requirement |
 |----|-----|-------------|
-| INF-DEV-01 | P0 | `docker compose up` starts Postgres, Redis, MinIO, LiveKit, api, realtime, web, Caddy. |
+| INF-DEV-01 | P0 | `docker compose up` starts Postgres, Redis, MinIO, api, realtime, web, Caddy. LiveKit sits behind an opt-in `av` compose profile for the stretch goal. |
 | INF-DEV-02 | P0 | `make dev` runs Go services with live reload (`air`) and Next.js dev server against compose infra. |
 | INF-DEV-03 | P0 | `make migrate`, `make seed` (demo avatars, elements, two map templates, demo users). |
 | INF-DEV-04 | P0 | `.env.example` documents every variable; no secrets committed. |
@@ -82,7 +82,7 @@ Target: **Fly.io** (simple, supports WebSockets and UDP for LiveKit) — or a si
 | INF-PROD-03 | P0 | Secrets from platform secret store, never in images. |
 | INF-PROD-04 | P1 | Two realtime instances behind sticky routing on `spaceId` to prove horizontal scaling. |
 | INF-PROD-05 | P1 | Object storage on Cloudflare R2 / S3 with public read for assets, CORS for presigned uploads. |
-| INF-PROD-06 | P1 | LiveKit self-hosted with UDP port range open, or LiveKit Cloud free tier. |
+| INF-PROD-06 | Stretch | LiveKit self-hosted with UDP port range open, or LiveKit Cloud free tier. |
 | INF-PROD-07 | P2 | Kubernetes path: Helm chart, HPA on api, realtime as StatefulSet with session affinity. |
 
 ## 7. Observability
@@ -90,7 +90,7 @@ Target: **Fly.io** (simple, supports WebSockets and UDP for LiveKit) — or a si
 | ID | Pri | Requirement |
 |----|-----|-------------|
 | INF-OBS-01 | P0 | JSON logs via `slog` with `request_id`, `user_id`, `space_id`. |
-| INF-OBS-02 | P1 | Prometheus scraping api + realtime + LiveKit; Grafana dashboards: HTTP RED metrics, WS connections/rooms, message rates, DB pool, Go runtime. |
+| INF-OBS-02 | P1 | Prometheus scraping api + realtime (+ LiveKit if built); Grafana dashboards: HTTP RED metrics, WS connections/rooms, message rates, DB pool, Go runtime. |
 | INF-OBS-03 | P1 | OpenTelemetry tracing from web → api → Postgres; exported to Grafana Tempo or Jaeger locally. |
 | INF-OBS-04 | P2 | Alerts: error rate > 2%, p95 > 300 ms, realtime node down. |
 
@@ -111,5 +111,5 @@ Record key choices in `docs/adr/NNNN-title.md` (context → decision → consequ
 1. Go monorepo with two binaries.
 2. sqlc + pgx over an ORM.
 3. Sticky routing for realtime scaling.
-4. LiveKit for A/V.
+4. LiveKit for A/V (if the stretch goal is built).
 5. Fly.io vs VPS hosting.

@@ -4,9 +4,10 @@
 
 ## 1. Goals
 
-- A polished, responsive web client that makes the backend demoable.
+- A responsive web client that makes the backend demoable. It's deliberately thin: the infra is the focus, so build the auth pages, dashboard and world first, and the editor and admin console after.
 - Smooth 60 fps world rendering with client-side prediction and server reconciliation.
-- A simple editor for placing elements, and an admin console for the catalogue.
+- A simple editor for placing elements, and an admin console for the catalogue (P1; seeding via CLI covers the catalogue until then).
+- Leave room in the UI (side panel, avatar overlays) for the unique features in [07](./07-feature-ideas.md).
 
 ## 2. Non-goals
 
