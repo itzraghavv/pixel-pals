@@ -72,6 +72,10 @@ func integrationPool(t *testing.T) *pgxpool.Pool {
 	}
 	defer conn.Close()
 	goose.SetBaseFS(migrations.Files)
+	// Qualify the version table: otherwise goose can discover a version table in
+	// public via search_path and skip creating our isolated test tables.
+	goose.SetTableName(schema + ".goose_db_version")
+	defer goose.SetTableName("goose_db_version")
 	if e = goose.SetDialect("postgres"); e != nil {
 		t.Fatal(e)
 	}

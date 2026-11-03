@@ -100,3 +100,74 @@ func TestUserIDInLogs(t *testing.T) {
 		t.Fatal(out.String())
 	}
 }
+
+func TestCORSAllowlist(t *testing.T) {
+	for _, origins := range [][]string{nil, {"https://app.example"}} {
+		s := testServer()
+		s.Config.Origins = origins
+		router := s.Router()
+		for _, origin := range []string{"https://app.example", "https://evil.example"} {
+			r := httptest.NewRequest("GET", "/healthz", nil)
+			r.Header.Set("Origin", origin)
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, r)
+			allowed := w.Header().Get("Access-Control-Allow-Origin")
+			want := ""
+			if len(origins) > 0 && origin == origins[0] {
+				want = origin
+			}
+			if allowed != want {
+				t.Fatalf("origin %s allowed as %s", origin, allowed)
+			}
+		}
+	}
+}
+func TestSharedLimiterErrors(t *testing.T) {
+	for _, unavailable := range []bool{false, true} {
+		s := testServer()
+		s.RateLimit = func(context.Context, string) (bool, error) {
+			if unavailable {
+				return false, errors.New("redis down")
+			}
+			return false, nil
+		}
+		r := httptest.NewRequest("POST", "/api/v1/sign-in", strings.NewReader(`{"username":"user","password":"password"}`))
+		w := httptest.NewRecorder()
+		s.Router().ServeHTTP(w, r)
+		want := 429
+		if unavailable {
+			want = 503
+		}
+		if w.Code != want {
+			t.Fatal(w.Code, w.Body)
+		}
+	}
+}
+
+type uploadStub struct{}
+
+func (uploadStub) Sign(context.Context, string, int64) (any, error) {
+	return map[string]any{"uploadUrl": "https://storage.example/upload", "publicUrl": "https://storage.example/asset.png", "headers": map[string][]string{"Content-Type": {"image/png"}}, "expiresIn": 300}, nil
+}
+func TestUploadContract(t *testing.T) {
+	s := testServer()
+	admin, _ := s.Service.Tokens.Issue("admin", "admin")
+	for _, tc := range []struct {
+		body    string
+		enabled bool
+		status  int
+	}{{`{"contentType":"image/png","size":4}`, false, 503}, {`{"contentType":"image/png","size":4}`, true, 200}, {`{"contentType":"image/svg+xml","size":4}`, true, 400}, {`{"contentType":"image/png","size":2097153}`, true, 400}} {
+		if tc.enabled {
+			s.Upload = uploadStub{}
+		} else {
+			s.Upload = nil
+		}
+		r := httptest.NewRequest("POST", "/api/v1/admin/uploads", strings.NewReader(tc.body))
+		r.Header.Set("Authorization", "Bearer "+admin)
+		w := httptest.NewRecorder()
+		s.Router().ServeHTTP(w, r)
+		if w.Code != tc.status {
+			t.Fatal(w.Code, w.Body)
+		}
+	}
+}
