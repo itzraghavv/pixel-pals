@@ -1,0 +1,1098 @@
+openapi: 3.1.0
+info:
+  title: Pixel Pals HTTP API
+  version: 1.0.0
+  description: P0 and P1 backend API. COMPAT_V0 adds legacy message errors and status
+    codes. P2 pagination, soft deletion and thumbnails are deferred.
+servers:
+- url: http://localhost:8080
+paths:
+  /healthz:
+    get:
+      operationId: health
+      description: health
+      security: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: &id001
+                    type: string
+                required:
+                - status
+                additionalProperties: false
+        default:
+          description: 'Structured error; authorization: missing token 403, invalid
+            token 401, non-admin 403. Compatibility errors are documented per operation.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /readyz:
+    get:
+      operationId: ready
+      description: 503 if PostgreSQL or Redis cannot be reached within two seconds.
+      security: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: *id001
+                required:
+                - status
+                additionalProperties: false
+        default:
+          description: 'Structured error; authorization: missing token 403, invalid
+            token 401, non-admin 403. Compatibility errors are documented per operation.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/sign-up:
+    post:
+      operationId: signUp
+      description: 'Duplicate username: 400. Admin signup requires development mode
+        and ALLOW_ADMIN_SIGNUP.'
+      security: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  userId: &id002
+                    type: string
+                    minLength: 1
+                    maxLength: 128
+                required:
+                - userId
+                additionalProperties: false
+        default:
+          description: 'Structured error; authorization: missing token 403, invalid
+            token 401, non-admin 403. Compatibility errors are documented per operation.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignUp'
+  /api/v1/sign-in:
+    post:
+      operationId: signIn
+      description: 'Wrong credentials: 403. Ten attempts per minute per IP and username
+        per API process.'
+      security: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Token'
+          headers:
+            Set-Cookie:
+              description: refresh_token; HttpOnly; Secure; SameSite=Lax; Path=/api/v1/auth.
+                Requires HTTPS (localhost exceptions depend on browser).
+              schema: *id001
+        default:
+          description: 'Structured error; authorization: missing token 403, invalid
+            token 401, non-admin 403. Compatibility errors are documented per operation.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignIn'
+  /api/v1/auth/refresh:
+    post:
+      operationId: refresh
+      description: Uses refresh_token cookie. Refresh rotates atomically; consumed,
+        revoked or expired tokens return 401. Unapproved Origin returns 403.
+      security: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Token'
+          headers:
+            Set-Cookie:
+              description: refresh_token; HttpOnly; Secure; SameSite=Lax; Path=/api/v1/auth.
+                Requires HTTPS (localhost exceptions depend on browser).
+              schema: *id001
+        default:
+          description: 'Structured error; authorization: missing token 403, invalid
+            token 401, non-admin 403. Compatibility errors are documented per operation.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+      - in: cookie
+        name: refresh_token
+        required: true
+        schema: *id001
+  /api/v1/auth/logout:
+    post:
+      operationId: logout
+      description: Uses refresh_token cookie. Refresh rotates atomically; consumed,
+        revoked or expired tokens return 401. Unapproved Origin returns 403.
+      security: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+          headers:
+            Set-Cookie:
+              description: refresh_token; HttpOnly; Secure; SameSite=Lax; Path=/api/v1/auth.
+                Requires HTTPS (localhost exceptions depend on browser).
+              schema: *id001
+        default:
+          description: 'Structured error; authorization: missing token 403, invalid
+            token 401, non-admin 403. Compatibility errors are documented per operation.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+      - in: cookie
+        name: refresh_token
+        required: false
+        schema: *id001
+  /api/v1/avatars:
+    get:
+      operationId: listAvatars
+      description: listAvatars
+      security: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  avatars:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Avatar'
+                required:
+                - avatars
+                additionalProperties: false
+        default:
+          description: 'Structured error; authorization: missing token 403, invalid
+            token 401, non-admin 403. Compatibility errors are documented per operation.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/elements:
+    get:
+      operationId: listElements
+      description: listElements
+      security: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  elements:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Element'
+                required:
+                - elements
+                additionalProperties: false
+        default:
+          description: 'Structured error; authorization: missing token 403, invalid
+            token 401, non-admin 403. Compatibility errors are documented per operation.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/element:
+    get:
+      operationId: listElementsLegacy
+      description: listElementsLegacy
+      security: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  elements:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Element'
+                required:
+                - elements
+                additionalProperties: false
+        default:
+          description: 'Structured error; authorization: missing token 403, invalid
+            token 401, non-admin 403. Compatibility errors are documented per operation.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/maps:
+    get:
+      operationId: listMaps
+      description: listMaps
+      security: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  maps:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Map'
+                required:
+                - maps
+                additionalProperties: false
+        default:
+          description: 'Structured error; authorization: missing token 403, invalid
+            token 401, non-admin 403. Compatibility errors are documented per operation.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/me:
+    get:
+      operationId: me
+      description: me
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+        default:
+          description: 'Structured error; authorization: missing token 403, invalid
+            token 401, non-admin 403. Compatibility errors are documented per operation.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/user/metadata:
+    post:
+      operationId: setAvatar
+      description: setAvatar
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        default:
+          description: 'Structured error; authorization: missing token 403, invalid
+            token 401, non-admin 403. Compatibility errors are documented per operation.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                avatarId: *id002
+              required:
+              - avatarId
+              additionalProperties: false
+  /api/v1/user/metadata/bulk:
+    get:
+      operationId: bulkMetadata
+      description: bulkMetadata
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  avatars:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        userId: *id002
+                        imageUrl: *id001
+                      required:
+                      - userId
+                      - imageUrl
+                      additionalProperties: false
+                required:
+                - avatars
+                additionalProperties: false
+        default:
+          description: 'Structured error; authorization: missing token 403, invalid
+            token 401, non-admin 403. Compatibility errors are documented per operation.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+      - in: query
+        name: ids
+        required: true
+        schema:
+          type: string
+          example: '[id-a,id-b]'
+        description: Bracketed comma-separated IDs or JSON string array. Max 100;
+          malformed lists return 400.
+  /api/v1/admin/avatar:
+    post:
+      operationId: createAvatar
+      description: Admin only.
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  avatarId: *id002
+                required:
+                - avatarId
+                additionalProperties: false
+        default:
+          description: 'Structured error; authorization: missing token 403, invalid
+            token 401, non-admin 403. Compatibility errors are documented per operation.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AvatarInput'
+  /api/v1/admin/element:
+    post:
+      operationId: createElement
+      description: Admin only.
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: *id002
+                required:
+                - id
+                additionalProperties: false
+        default:
+          description: 'Structured error; authorization: missing token 403, invalid
+            token 401, non-admin 403. Compatibility errors are documented per operation.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ElementInput'
+  /api/v1/admin/element/{id}:
+    put:
+      operationId: updateElement
+      description: 'Admin only. Unknown element: 404.'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        default:
+          description: 'Structured error; authorization: missing token 403, invalid
+            token 401, non-admin 403. Compatibility errors are documented per operation.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                imageUrl: &id003
+                  type: string
+                  format: uri
+                  pattern: ^https?://
+                  maxLength: 2048
+              required:
+              - imageUrl
+              additionalProperties: false
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema: *id002
+  /api/v1/admin/map:
+    post:
+      operationId: createMap
+      description: 'Admin only. Full footprint must fit. Invalid elements or bounds:
+        400. All placements are transactional.'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: *id002
+                required:
+                - id
+                additionalProperties: false
+        default:
+          description: 'Structured error; authorization: missing token 403, invalid
+            token 401, non-admin 403. Compatibility errors are documented per operation.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MapInput'
+  /api/v1/admin/uploads:
+    post:
+      operationId: createUpload
+      description: 'Admin only. Presigned PUT expires in 300 seconds; content type
+        and exact content length are signed. Send returned headers. Storage unconfigured:
+        503.'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Upload'
+        default:
+          description: 'Structured error; authorization: missing token 403, invalid
+            token 401, non-admin 403. Compatibility errors are documented per operation.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadInput'
+  /api/v1/space:
+    post:
+      operationId: createSpace
+      description: 'Copies map dimensions, thumbnail and elements transactionally.
+        Unknown map: 400, or 403 with COMPAT_V0=true.'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  spaceId: *id002
+                required:
+                - spaceId
+                additionalProperties: false
+        default:
+          description: 'Structured error; authorization: missing token 403, invalid
+            token 401, non-admin 403. Compatibility errors are documented per operation.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SpaceInput'
+  /api/v1/space/all:
+    get:
+      operationId: listSpaces
+      description: listSpaces
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  spaces:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SpaceSummary'
+                required:
+                - spaces
+                additionalProperties: false
+        default:
+          description: 'Structured error; authorization: missing token 403, invalid
+            token 401, non-admin 403. Compatibility errors are documented per operation.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/space/{id}:
+    get:
+      operationId: getSpace
+      description: 'Owner/member only. Missing space: 404, or 400 with COMPAT_V0=true.'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Space'
+        default:
+          description: 'Structured error; authorization: missing token 403, invalid
+            token 401, non-admin 403. Compatibility errors are documented per operation.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema: *id002
+    delete:
+      operationId: deleteSpace
+      description: Owner only; cascades placements, membership and invites.
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        default:
+          description: 'Structured error; authorization: missing token 403, invalid
+            token 401, non-admin 403. Compatibility errors are documented per operation.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema: *id002
+  /api/v1/space/element:
+    post:
+      operationId: addPlacement
+      description: Owner only. Full footprint must fit exclusive bounds. Enqueues
+        space.updated.
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: *id002
+                  message: *id001
+                required:
+                - id
+                - message
+                additionalProperties: false
+        default:
+          description: 'Structured error; authorization: missing token 403, invalid
+            token 401, non-admin 403. Compatibility errors are documented per operation.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddPlacement'
+    delete:
+      operationId: removePlacement
+      description: Owner only. Enqueues space.updated.
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        default:
+          description: 'Structured error; authorization: missing token 403, invalid
+            token 401, non-admin 403. Compatibility errors are documented per operation.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id: *id002
+              required:
+              - id
+              additionalProperties: false
+  /api/v1/space/{id}/invites:
+    post:
+      operationId: createInvite
+      description: Owner only. Shareable invite expires after seven days; stored hashed.
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: *id001
+                  acceptPath: *id001
+                required:
+                - token
+                - acceptPath
+                additionalProperties: false
+        default:
+          description: 'Structured error; authorization: missing token 403, invalid
+            token 401, non-admin 403. Compatibility errors are documented per operation.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema: *id002
+  /api/v1/invites/{token}/accept:
+    post:
+      operationId: acceptInvite
+      description: 'Adds caller as member. Idempotent. Unknown or expired invite:
+        404.'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  spaceId: *id002
+                required:
+                - spaceId
+                additionalProperties: false
+        default:
+          description: 'Structured error; authorization: missing token 403, invalid
+            token 401, non-admin 403. Compatibility errors are documented per operation.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+      - in: path
+        name: token
+        required: true
+        schema: *id002
+  /metrics:
+    get:
+      operationId: metrics
+      security: []
+      responses:
+        '200':
+          description: Prometheus HTTP RED, Go runtime and DB pool metrics.
+          content:
+            text/plain:
+              schema: *id001
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Error:
+      type: object
+      required:
+      - error
+      properties:
+        error:
+          type: object
+          properties:
+            code: *id001
+            message: *id001
+          required:
+          - code
+          - message
+          additionalProperties: false
+        message:
+          type: string
+          description: Legacy field when COMPAT_V0=true.
+    Message:
+      type: object
+      properties:
+        message: *id001
+      required:
+      - message
+      additionalProperties: false
+    SignUp:
+      type: object
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 64
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+        type:
+          type: string
+          enum:
+          - user
+          - admin
+      required:
+      - username
+      - password
+      - type
+      additionalProperties: false
+    SignIn:
+      type: object
+      properties:
+        username:
+          type: string
+          minLength: 1
+          maxLength: 64
+        password:
+          type: string
+          minLength: 1
+          maxLength: 128
+      required:
+      - username
+      - password
+      additionalProperties: false
+    Token:
+      type: object
+      properties:
+        token: *id001
+      required:
+      - token
+      additionalProperties: false
+    Avatar:
+      type: object
+      properties:
+        id: *id002
+        name: *id001
+        imageUrl: *id003
+      required:
+      - id
+      - name
+      - imageUrl
+      additionalProperties: false
+    AvatarInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        imageUrl: *id003
+      required:
+      - name
+      - imageUrl
+      additionalProperties: false
+    Element:
+      type: object
+      properties:
+        id: *id002
+        width: &id005
+          type: integer
+          minimum: 1
+          maximum: 1000
+        height: &id006
+          type: integer
+          minimum: 1
+          maximum: 1000
+        static: &id007
+          type: boolean
+        imageUrl: *id003
+      required:
+      - id
+      - width
+      - height
+      - static
+      - imageUrl
+      additionalProperties: false
+    PlacementInput:
+      type: object
+      properties:
+        elementId: *id002
+        x: &id004
+          type: integer
+          minimum: 0
+          maximum: 1000
+        y: *id004
+      required:
+      - elementId
+      - x
+      - y
+      additionalProperties: false
+    MapInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        thumbnail: *id003
+        dimensions:
+          type: string
+          pattern: ^[0-9]+x[0-9]+$
+        defaultElements:
+          type: array
+          maxItems: 10000
+          items:
+            $ref: '#/components/schemas/PlacementInput'
+      required:
+      - name
+      - dimensions
+      additionalProperties: false
+    Map:
+      type: object
+      properties:
+        id: *id002
+        name: *id001
+        thumbnail: *id001
+        dimensions: *id001
+      required:
+      - id
+      - name
+      - thumbnail
+      - dimensions
+      additionalProperties: false
+    SpaceInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        dimensions:
+          type: string
+          description: WxH, 1..1000 each. Required without mapId; ignored with mapId.
+        mapId: *id002
+      required:
+      - name
+      additionalProperties: false
+    SpaceSummary:
+      type: object
+      properties:
+        id: *id002
+        name: *id001
+        thumbnail: *id001
+        dimensions: *id001
+      required:
+      - id
+      - name
+      - thumbnail
+      - dimensions
+      additionalProperties: false
+    PlacedElement:
+      type: object
+      properties:
+        id: *id002
+        x: *id004
+        y: *id004
+        element:
+          $ref: '#/components/schemas/Element'
+      required:
+      - id
+      - x
+      - y
+      - element
+      additionalProperties: false
+    Space:
+      type: object
+      properties:
+        id: *id002
+        name: *id001
+        dimensions: *id001
+        elements:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlacedElement'
+      required:
+      - id
+      - name
+      - dimensions
+      - elements
+      additionalProperties: false
+    AddPlacement:
+      type: object
+      properties:
+        spaceId: *id002
+        elementId: *id002
+        x: *id004
+        y: *id004
+      required:
+      - spaceId
+      - elementId
+      - x
+      - y
+      additionalProperties: false
+    Me:
+      type: object
+      properties:
+        id: *id002
+        username: *id001
+        role:
+          type: string
+          enum:
+          - user
+          - admin
+        avatar:
+          oneOf:
+          - $ref: '#/components/schemas/Avatar'
+          - type: 'null'
+      required:
+      - id
+      - username
+      - role
+      - avatar
+      additionalProperties: false
+    UploadInput:
+      type: object
+      properties:
+        contentType:
+          type: string
+          enum:
+          - image/png
+          - image/webp
+        size:
+          type: integer
+          minimum: 1
+          maximum: 2097152
+      required:
+      - contentType
+      - size
+      additionalProperties: false
+    Upload:
+      type: object
+      properties:
+        uploadUrl: *id003
+        publicUrl: *id003
+        headers:
+          type: object
+          additionalProperties:
+            type: array
+            items: *id001
+        expiresIn:
+          type: integer
+          const: 300
+      required:
+      - uploadUrl
+      - publicUrl
+      - headers
+      - expiresIn
+      additionalProperties: false
+    ElementInput:
+      type: object
+      properties:
+        width: *id005
+        height: *id006
+        static: *id007
+        imageUrl: *id003
+      required:
+      - width
+      - height
+      - static
+      - imageUrl
+      additionalProperties: false
