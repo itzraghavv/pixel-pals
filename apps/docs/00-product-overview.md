@@ -2,6 +2,11 @@
 
 **Status:** Draft · **Owner:** @itzraghavv · **Last updated:** 2026-10-30
 
+**Implementation (2026-11-03):** The Go HTTP API foundation and P0/P1 backend
+features are available; see the [backend runbook](../../backend/README.md).
+Realtime, chat and the playable web client remain separate milestones. The
+engineering success metrics below have not yet been established by load tests.
+
 ## 1. What Pixel Pals is
 
 A small realtime 2D world where **position = context**: you see who's around, walk up to people and chat with whoever is nearby. The idea comes from spatial platforms like Gather, but Pixel Pals doesn't try to copy them feature for feature.

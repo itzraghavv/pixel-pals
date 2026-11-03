@@ -2,6 +2,14 @@
 
 **Status:** Draft · **Service:** `api` · **Language:** Go
 
+**Implementation (2026-11-03):** P0 and P1 HTTP API features are implemented in
+[`backend/`](../../backend/README.md), with PostgreSQL migrations, generated sqlc
+queries, a seed/admin CLI, local Compose stack, OpenAPI/frontend types and CI.
+P2 soft deletion, pagination and client-generated thumbnails remain deferred.
+The original v0 Jest suite is not present in this repository; the new Go HTTP
+contract tests cover this PRD, but original-suite parity remains unverified.
+Performance targets and realtime join authorization require later service work.
+
 ## 1. Goals
 
 - Rebuild the REST API in idiomatic Go with clear layering (handler → service → repository).
