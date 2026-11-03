@@ -1,0 +1,57 @@
+name: Backend API
+on:
+  pull_request:
+    paths: ['backend/**', 'apps/web/lib/api/**', 'compose.yaml', 'Makefile', '.github/workflows/backend.yml']
+  push:
+    branches: [main]
+    paths: ['backend/**', 'apps/web/lib/api/**', 'compose.yaml', 'Makefile', '.github/workflows/backend.yml']
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      JWT_SECRET: ci-only-secret-with-at-least-32-bytes
+      TEST_REDIS_URL: redis://localhost:6379
+      TEST_S3_ENDPOINT: http://localhost:9000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm install --global pnpm@11.25.0
+      - run: docker compose up -d redis minio minio-init
+      - run: docker compose wait minio-init
+      - name: Formatting and vet
+        working-directory: backend
+        run: |
+          test -z "$(gofmt -l cmd internal migrations)"
+          go vet -tags integration ./...
+      - name: Unit and integration tests with race detector
+        working-directory: backend
+        run: go test -race -tags integration ./... -coverpkg=./internal/http,./internal/service -coverprofile=coverage.out
+      - name: Require at least 70 percent handler and service coverage
+        working-directory: backend
+        shell: bash
+        run: go tool cover -func=coverage.out | awk '/^total:/ { if (($3 + 0) < 70) exit 1 }'
+      - name: Verify generated SQL
+        working-directory: backend
+        run: |
+          go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.29.0 generate
+          git diff --exit-code -- internal/store/db
+      - name: Verify generated frontend contract
+        run: |
+          pnpm dlx openapi-typescript@7.6.1 backend/api/openapi.yaml -o apps/web/lib/api/schema.d.ts
+          git diff --exit-code -- apps/web/lib/api/schema.d.ts
+      - name: Build production image
+        run: docker build -t pixel-pals-api:ci backend
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/coverage.out
+      - if: always()
+        run: docker compose down -v
