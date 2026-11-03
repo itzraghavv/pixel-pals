@@ -41,6 +41,7 @@ services:
   migrate:
     build:
       context: backend
+      target: cli
     entrypoint: ['/palsctl', 'migrate']
     environment:
       DATABASE_URL: postgres://pals:pals@postgres:5432/pals?sslmode=disable
@@ -49,6 +50,7 @@ services:
   api:
     build:
       context: backend
+      target: api
     environment:
       HTTP_PORT: '8080'
       APP_ENV: development
