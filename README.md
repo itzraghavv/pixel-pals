@@ -1,4 +1,4 @@
-# Pixel Pals
+# Pixel Pals test 
 
 A small realtime 2D world where position provides context: walk up to people and chat with whoever is nearby. This is an infrastructure and learning project built around a Go HTTP API, a planned stateful realtime service, and a Next.js client.
 
