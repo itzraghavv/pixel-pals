@@ -2,6 +2,7 @@ package realtime
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 	"time"
@@ -18,6 +19,11 @@ const (
 type message struct {
 	Type    string `json:"type"`
 	Payload any    `json:"payload"`
+}
+
+type delivery struct {
+	message
+	wire []byte
 }
 
 type closeReason struct {
@@ -40,14 +46,14 @@ type presence struct {
 
 type client struct {
 	identity
-	out      chan message
+	out      chan delivery
 	stopped  chan struct{}
 	stopOnce sync.Once
 	reason   closeReason
 }
 
 func newClient() *client {
-	return &client{out: make(chan message, 64), stopped: make(chan struct{})}
+	return &client{out: make(chan delivery, 64), stopped: make(chan struct{})}
 }
 
 func (c *client) stop(reason closeReason) {
@@ -78,6 +84,7 @@ type room struct {
 	allowOverlap    bool
 	proximityRadius int
 	proximityDirty  bool
+	metrics         *metrics
 }
 
 func newRoom(compat bool) *room {
@@ -152,11 +159,11 @@ func (r *room) join(c *client) error {
 	if r.compat {
 		spawn = &position
 	}
-	c.out <- message{"space-joined", struct {
+	c.out <- delivery{message: message{"space-joined", struct {
 		Self  presence   `json:"self"`
 		Users []presence `json:"users"`
 		Spawn *point     `json:"spawn,omitempty"`
-	}{self, users, spawn}}
+	}{self, users, spawn}}}
 
 	if old, exists := r.players[c.UserID]; exists {
 		old.client.stop(closeReason{closeReplaced, "Session replaced"})
@@ -234,6 +241,10 @@ func (r *room) leave(c *client) {
 }
 
 func (r *room) send(c *client, msg message) bool {
+	return r.enqueue(c, delivery{message: msg})
+}
+
+func (r *room) enqueue(c *client, msg delivery) bool {
 	select {
 	case <-c.stopped:
 		return false
@@ -249,12 +260,18 @@ func (r *room) send(c *client, msg message) bool {
 }
 
 func (r *room) broadcast(except string, msg message) {
+	if r.metrics != nil {
+		start := time.Now()
+		defer func() { r.metrics.broadcast.Observe(time.Since(start).Seconds()) }()
+	}
 	pending := []message{msg}
 	for len(pending) > 0 {
 		current := pending[0]
 		pending = pending[1:]
+		wire, _ := json.Marshal(current)
+		out := delivery{message: current, wire: wire}
 		for id, player := range r.players {
-			if id == except || r.send(player.client, current) {
+			if id == except || r.enqueue(player.client, out) {
 				continue
 			}
 			delete(r.players, id)

@@ -47,6 +47,7 @@ type Server struct {
 	options  Options
 	log      *slog.Logger
 	upgrader websocket.Upgrader
+	metrics  *metrics
 
 	ctx         context.Context
 	cancel      context.CancelFunc
@@ -60,7 +61,7 @@ type Server struct {
 func NewServer(repo Repository, tokens auth.Tokens, options Options, log *slog.Logger) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Server{
-		repo: repo, tokens: tokens, options: options, log: log,
+		repo: repo, tokens: tokens, options: options, log: log, metrics: newMetrics(),
 		ctx: ctx, cancel: cancel, rooms: make(map[string]*room), clients: make(map[*client]struct{}),
 	}
 	s.upgrader.CheckOrigin = func(r *http.Request) bool {
@@ -114,6 +115,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		return
 	}
+	s.metrics.connections.Inc()
+	defer s.metrics.connections.Dec()
 	defer conn.Close()
 	done := make(chan struct{})
 	go func() {
@@ -132,7 +135,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	var first inbound
 	for {
 		var ok bool
-		first, ok, err = readMessage(conn)
+		first, ok, err = s.readMessage(conn)
 		if err != nil {
 			c.stop(closeReason{closeJoin, "Join required within five seconds"})
 			return
@@ -166,7 +169,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	_ = conn.SetReadDeadline(time.Now().Add(pongTimeout))
 	moves, chats := newBucket(20, 20), newBucket(5, 10)
 	for {
-		msg, ok, err := readMessage(conn)
+		msg, ok, err := s.readMessage(conn)
 		if err != nil {
 			return
 		}
@@ -324,10 +327,13 @@ func (s *Server) getRoom(spaceID string) *room {
 	r := newRoom(s.options.Compat)
 	r.allowOverlap = s.options.AllowOverlap
 	r.proximityRadius = s.options.ProximityRadius
+	r.metrics = s.metrics
 	s.rooms[spaceID] = r
 	s.roomWorkers.Add(1)
+	s.metrics.rooms.Inc()
 	go func() {
 		defer s.roomWorkers.Done()
+		defer s.metrics.rooms.Dec()
 		r.run(s.ctx, roomIdle)
 		s.mu.Lock()
 		if s.rooms[spaceID] == r {
@@ -343,8 +349,11 @@ type inbound struct {
 	Payload json.RawMessage `json:"payload"`
 }
 
-func readMessage(conn *websocket.Conn) (inbound, bool, error) {
+func (s *Server) readMessage(conn *websocket.Conn) (inbound, bool, error) {
 	kind, data, err := conn.ReadMessage()
+	if err == nil {
+		s.metrics.in.Inc()
+	}
 	var msg inbound
 	ok := err == nil && kind == websocket.TextMessage && json.Unmarshal(data, &msg) == nil && msg.Type != ""
 	return msg, ok, err
@@ -353,19 +362,28 @@ func readMessage(conn *websocket.Conn) (inbound, bool, error) {
 func (s *Server) writePump(conn *websocket.Conn, c *client) {
 	ticker := time.NewTicker(pingInterval)
 	defer ticker.Stop()
-	write := func(msg message) error {
+	write := func(msg delivery) error {
 		_ = conn.SetWriteDeadline(time.Now().Add(writeTimeout))
-		return conn.WriteJSON(msg)
+		var err error
+		if msg.wire == nil {
+			err = conn.WriteJSON(msg.message)
+		} else {
+			err = conn.WriteMessage(websocket.TextMessage, msg.wire)
+		}
+		if err == nil {
+			s.metrics.out.Inc()
+		}
+		return err
 	}
 	closeConnection := func() {
 		reason := c.reason
 		if reason.code == 1012 {
-			_ = write(message{"error", map[string]string{"code": "server-restart", "message": reason.message}})
+			_ = write(delivery{message: message{"error", map[string]string{"code": "server-restart", "message": reason.message}}})
 		} else if reason.code != websocket.CloseNormalClosure {
-			_ = write(message{"error", struct {
+			_ = write(delivery{message: message{"error", struct {
 				Code    int    `json:"code"`
 				Message string `json:"message"`
-			}{reason.code, reason.message}})
+			}{reason.code, reason.message}}})
 		}
 		_ = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(reason.code, reason.message), time.Now().Add(writeTimeout))
 	}
