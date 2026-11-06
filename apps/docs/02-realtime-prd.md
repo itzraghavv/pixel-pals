@@ -1,6 +1,6 @@
 # 02 — Realtime Service PRD
 
-**Status:** Draft · **Service:** `realtime` · **Language:** Go
+**Status:** P0/P1 implemented locally · **Service:** `realtime` · **Language:** Go
 
 ## 1. Goals
 
