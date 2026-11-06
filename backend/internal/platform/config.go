@@ -21,7 +21,8 @@ func Load() (Config, error) {
 
 type RealtimeConfig struct {
 	Config
-	AllowOverlap bool
+	AllowOverlap    bool
+	ProximityRadius int
 }
 
 func LoadRealtime() (RealtimeConfig, error) {
@@ -33,6 +34,10 @@ func LoadRealtime() (RealtimeConfig, error) {
 	c.AllowOverlap, err = strconv.ParseBool(env("ALLOW_TILE_OVERLAP", "true"))
 	if err != nil {
 		return c, fmt.Errorf("ALLOW_TILE_OVERLAP: %w", err)
+	}
+	c.ProximityRadius, err = strconv.Atoi(env("PROXIMITY_RADIUS", "3"))
+	if err != nil || c.ProximityRadius < 0 || c.ProximityRadius > 1000 {
+		return c, fmt.Errorf("PROXIMITY_RADIUS must be between 0 and 1000")
 	}
 	return c, nil
 }

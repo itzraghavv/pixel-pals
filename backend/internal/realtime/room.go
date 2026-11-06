@@ -34,7 +34,8 @@ type identity struct {
 type presence struct {
 	identity
 	point
-	ID string `json:"id,omitempty"`
+	Direction string `json:"dir,omitempty"`
+	ID        string `json:"id,omitempty"`
 }
 
 type client struct {
@@ -57,22 +58,31 @@ func (c *client) stop(reason closeReason) {
 }
 
 type participant struct {
-	client   *client
-	position point
+	client    *client
+	position  point
+	direction string
+	proximity proximity
+}
+
+type roomCommand struct {
+	run      func()
+	finished chan struct{}
 }
 
 type room struct {
-	commands     chan func()
-	done         chan struct{}
-	players      map[string]participant
-	grid         grid
-	compat       bool
-	allowOverlap bool
+	commands        chan roomCommand
+	done            chan struct{}
+	players         map[string]participant
+	grid            grid
+	compat          bool
+	allowOverlap    bool
+	proximityRadius int
+	proximityDirty  bool
 }
 
 func newRoom(compat bool) *room {
 	return &room{
-		commands: make(chan func()), done: make(chan struct{}),
+		commands: make(chan roomCommand), done: make(chan struct{}),
 		players: make(map[string]participant), compat: compat, allowOverlap: true,
 	}
 }
@@ -92,13 +102,18 @@ func (r *room) run(ctx context.Context, idle time.Duration) {
 			return
 		case command := <-r.commands:
 			wasEmpty := len(r.players) == 0
-			command()
+			command.run()
+			for r.proximityDirty {
+				r.proximityDirty = false
+				r.updateProximity()
+			}
 			switch {
 			case wasEmpty && len(r.players) > 0:
 				timer.Stop()
 			case !wasEmpty && len(r.players) == 0:
 				timer.Reset(idle)
 			}
+			close(command.finished)
 		}
 	}
 }
@@ -112,7 +127,7 @@ func (r *room) call(ctx context.Context, command func()) bool {
 		return false
 	case <-r.done:
 		return false
-	case r.commands <- func() { command(); close(finished) }:
+	case r.commands <- roomCommand{command, finished}:
 		<-finished
 		return true
 	}
@@ -126,7 +141,7 @@ func (r *room) join(c *client) error {
 		return errNoSpawn
 	}
 
-	self := r.presence(participant{c, position})
+	self := r.presence(participant{client: c, position: position})
 	users := make([]presence, 0, len(r.players))
 	for id, player := range r.players {
 		if id != c.UserID {
@@ -146,7 +161,8 @@ func (r *room) join(c *client) error {
 	if old, exists := r.players[c.UserID]; exists {
 		old.client.stop(closeReason{closeReplaced, "Session replaced"})
 	}
-	r.players[c.UserID] = participant{c, position}
+	r.players[c.UserID] = participant{client: c, position: position}
+	r.proximityDirty = true
 	r.broadcast(c.UserID, message{"user-joined", self})
 	return nil
 }
@@ -175,7 +191,7 @@ func (r *room) occupied(p point, except string) bool {
 }
 
 func (r *room) presence(p participant) presence {
-	result := presence{identity: p.client.identity, point: p.position}
+	result := presence{identity: p.client.identity, point: p.position, Direction: p.direction}
 	if r.compat {
 		result.ID = result.UserID
 	}
@@ -195,6 +211,8 @@ func (r *room) move(c *client, target point) {
 		return
 	}
 	player.position = target
+	player.direction = dir
+	r.proximityDirty = true
 	r.players[c.UserID] = player
 	r.broadcast(c.UserID, message{"movement", struct {
 		UserID string `json:"userId"`
@@ -206,6 +224,7 @@ func (r *room) move(c *client, target point) {
 func (r *room) leave(c *client) {
 	if player, exists := r.players[c.UserID]; exists && player.client == c {
 		delete(r.players, c.UserID)
+		r.proximityDirty = true
 		r.broadcast("", message{"user-left", map[string]string{"userId": c.UserID}})
 	}
 }
@@ -235,6 +254,7 @@ func (r *room) broadcast(except string, msg message) {
 				continue
 			}
 			delete(r.players, id)
+			r.proximityDirty = true
 			pending = append(pending, message{"user-left", map[string]string{"userId": id}})
 		}
 		except = ""

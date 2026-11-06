@@ -32,6 +32,7 @@ type Querier interface {
 	GetMapElements(ctx context.Context, mapID string) ([]MapElement, error)
 	GetPlacement(ctx context.Context, id string) (SpaceElement, error)
 	GetSpace(ctx context.Context, id string) (Space, error)
+	GetSpaceAreaTiles(ctx context.Context, spaceID string) ([]GetSpaceAreaTilesRow, error)
 	GetSpaceElements(ctx context.Context, spaceID string) ([]GetSpaceElementsRow, error)
 	IsMember(ctx context.Context, arg IsMemberParams) (bool, error)
 	ListAvatars(ctx context.Context) ([]Avatar, error)

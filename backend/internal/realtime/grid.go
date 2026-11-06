@@ -15,13 +15,14 @@ type point struct {
 type grid struct {
 	width, height int
 	blocked       []bool
+	areas         map[point]string
 }
 
 func newGrid(space db.Space, placements []db.GetSpaceElementsRow) (grid, error) {
 	if space.Width < 1 || space.Height < 1 || space.Width > 1000 || space.Height > 1000 {
 		return grid{}, fmt.Errorf("invalid space dimensions: %dx%d", space.Width, space.Height)
 	}
-	g := grid{int(space.Width), int(space.Height), make([]bool, int(space.Width)*int(space.Height))}
+	g := grid{width: int(space.Width), height: int(space.Height), blocked: make([]bool, int(space.Width)*int(space.Height))}
 	for _, p := range placements {
 		if !p.Static {
 			continue

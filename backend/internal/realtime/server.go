@@ -28,15 +28,17 @@ const (
 type Repository interface {
 	GetSpace(context.Context, string) (db.Space, error)
 	GetSpaceElements(context.Context, string) ([]db.GetSpaceElementsRow, error)
+	GetSpaceAreaTiles(context.Context, string) ([]db.GetSpaceAreaTilesRow, error)
 	IsMember(context.Context, db.IsMemberParams) (bool, error)
 	UserByID(context.Context, string) (db.User, error)
 	BulkMetadata(context.Context, []string) ([]db.BulkMetadataRow, error)
 }
 
 type Options struct {
-	Origins      []string
-	Compat       bool
-	AllowOverlap bool
+	Origins         []string
+	Compat          bool
+	AllowOverlap    bool
+	ProximityRadius int
 }
 
 type Server struct {
@@ -285,8 +287,23 @@ func (s *Server) loadGrid(ctx context.Context, r *room, space db.Space) error {
 	if err != nil {
 		return err
 	}
-	r.grid, err = newGrid(space, elements)
-	return err
+	areas, err := s.repo.GetSpaceAreaTiles(ctx, space.ID)
+	if err != nil {
+		return err
+	}
+	g, err := newGrid(space, elements)
+	if err != nil {
+		return err
+	}
+	g.areas = make(map[point]string, len(areas))
+	for _, area := range areas {
+		p := point{int(area.X), int(area.Y)}
+		if g.free(p) {
+			g.areas[p] = area.AreaID
+		}
+	}
+	r.grid = g
+	return nil
 }
 
 func (s *Server) getRoom(spaceID string) *room {
@@ -304,6 +321,7 @@ func (s *Server) getRoom(spaceID string) *room {
 	}
 	r := newRoom(s.options.Compat)
 	r.allowOverlap = s.options.AllowOverlap
+	r.proximityRadius = s.options.ProximityRadius
 	s.rooms[spaceID] = r
 	go func() {
 		r.run(s.ctx, roomIdle)

@@ -31,6 +31,10 @@ func (fixtureRepo) GetSpaceElements(context.Context, string) ([]db.GetSpaceEleme
 	return nil, nil
 }
 
+func (fixtureRepo) GetSpaceAreaTiles(context.Context, string) ([]db.GetSpaceAreaTilesRow, error) {
+	return nil, nil
+}
+
 func (fixtureRepo) IsMember(_ context.Context, p db.IsMemberParams) (bool, error) {
 	return p.UserID == "b", nil
 }
@@ -74,8 +78,13 @@ func send(t *testing.T, c *websocket.Conn, kind string, payload any) {
 func read(t *testing.T, c *websocket.Conn, kind string) json.RawMessage {
 	t.Helper()
 	var msg inbound
-	if err := c.ReadJSON(&msg); err != nil {
-		t.Fatal(err)
+	for {
+		if err := c.ReadJSON(&msg); err != nil {
+			t.Fatal(err)
+		}
+		if msg.Type != "proximity" || kind == "proximity" {
+			break
+		}
 	}
 	if msg.Type != kind {
 		t.Fatalf("got %q, want %q", msg.Type, kind)
