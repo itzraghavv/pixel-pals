@@ -49,8 +49,13 @@ func (fixtureRepo) BulkMetadata(context.Context, []string) ([]db.BulkMetadataRow
 
 func startFixture(t *testing.T) (*Server, string, auth.Tokens) {
 	t.Helper()
+	return startWithRepo(t, fixtureRepo{})
+}
+
+func startWithRepo(t *testing.T, repo Repository) (*Server, string, auth.Tokens) {
+	t.Helper()
 	tokens := auth.Tokens{Secret: []byte("test-realtime-secret-with-32-bytes")}
-	s := NewServer(fixtureRepo{}, tokens, Options{Origins: []string{"http://localhost:3000"}, Compat: true, AllowOverlap: true}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	s := NewServer(repo, tokens, Options{Origins: []string{"http://localhost:3000"}, Compat: true, AllowOverlap: true}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	httpServer := httptest.NewServer(s)
 	t.Cleanup(httpServer.Close)
 	t.Cleanup(s.Shutdown)

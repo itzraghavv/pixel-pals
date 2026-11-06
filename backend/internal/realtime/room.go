@@ -141,7 +141,7 @@ func (r *room) join(c *client) error {
 		return errNoSpawn
 	}
 
-	self := r.presence(participant{client: c, position: position})
+	self := r.presence(participant{client: c, position: position, direction: "down"})
 	users := make([]presence, 0, len(r.players))
 	for id, player := range r.players {
 		if id != c.UserID {
@@ -161,7 +161,7 @@ func (r *room) join(c *client) error {
 	if old, exists := r.players[c.UserID]; exists {
 		old.client.stop(closeReason{closeReplaced, "Session replaced"})
 	}
-	r.players[c.UserID] = participant{client: c, position: position}
+	r.players[c.UserID] = participant{client: c, position: position, direction: "down"}
 	r.proximityDirty = true
 	r.broadcast(c.UserID, message{"user-joined", self})
 	return nil
@@ -214,11 +214,15 @@ func (r *room) move(c *client, target point) {
 	player.direction = dir
 	r.proximityDirty = true
 	r.players[c.UserID] = player
-	r.broadcast(c.UserID, message{"movement", struct {
+	r.broadcastMovement(player, c.UserID)
+}
+
+func (r *room) broadcastMovement(player participant, except string) {
+	r.broadcast(except, message{"movement", struct {
 		UserID string `json:"userId"`
 		point
 		Direction string `json:"dir"`
-	}{c.UserID, target, dir}})
+	}{player.client.UserID, player.position, player.direction}})
 }
 
 func (r *room) leave(c *client) {

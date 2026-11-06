@@ -54,6 +54,7 @@ type Server struct {
 	rooms       map[string]*room
 	clients     map[*client]struct{}
 	connections sync.WaitGroup
+	roomWorkers sync.WaitGroup
 }
 
 func NewServer(repo Repository, tokens auth.Tokens, options Options, log *slog.Logger) *Server {
@@ -88,6 +89,7 @@ func (s *Server) Shutdown() {
 	s.cancel()
 	s.mu.Unlock()
 	s.connections.Wait()
+	s.roomWorkers.Wait()
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -323,7 +325,9 @@ func (s *Server) getRoom(spaceID string) *room {
 	r.allowOverlap = s.options.AllowOverlap
 	r.proximityRadius = s.options.ProximityRadius
 	s.rooms[spaceID] = r
+	s.roomWorkers.Add(1)
 	go func() {
+		defer s.roomWorkers.Done()
 		r.run(s.ctx, roomIdle)
 		s.mu.Lock()
 		if s.rooms[spaceID] == r {

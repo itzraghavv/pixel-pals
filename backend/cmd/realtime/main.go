@@ -15,6 +15,7 @@ import (
 	"github.com/itzraghavv/pixel-pals/backend/internal/realtime"
 	"github.com/itzraghavv/pixel-pals/backend/internal/store"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 )
 
 func main() {
@@ -43,9 +44,30 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
+	redisOptions, err := redis.ParseURL(c.RedisURL)
+	if err != nil {
+		return err
+	}
+	redisOptions.DialTimeout = 2 * time.Second
+	redisOptions.ReadTimeout = 2 * time.Second
+	redisOptions.WriteTimeout = 2 * time.Second
+	redisClient := redis.NewClient(redisOptions)
+	defer redisClient.Close()
+	subscription := redisClient.Subscribe(startup, platform.SpaceUpdatesChannel)
+	defer subscription.Close()
+	if _, err = subscription.Receive(startup); err != nil {
+		return err
+	}
+
 	ws := realtime.NewServer(store.New(pool), auth.Tokens{Secret: []byte(c.JWTSecret)}, realtime.Options{
 		Origins: c.Origins, Compat: c.Compat, AllowOverlap: c.AllowOverlap, ProximityRadius: c.ProximityRadius,
 	}, log)
+	updatesDone := make(chan struct{})
+	go func() {
+		defer close(updatesDone)
+		ws.WatchSpaceUpdates(subscription)
+	}()
+
 	mux := http.NewServeMux()
 	mux.Handle("GET /ws", ws)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
@@ -54,6 +76,10 @@ func run(log *slog.Logger) error {
 		defer cancel()
 		if err := pool.Ping(ctx); err != nil {
 			http.Error(w, "Database unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		if err := redisClient.Ping(ctx).Err(); err != nil {
+			http.Error(w, "Redis unavailable", http.StatusServiceUnavailable)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
@@ -79,6 +105,7 @@ func run(log *slog.Logger) error {
 		}
 	}
 	ws.Shutdown()
+	<-updatesDone
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}
