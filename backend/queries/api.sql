@@ -72,3 +72,5 @@ INSERT INTO space_events(space_id) VALUES($1);
 SELECT * FROM space_events ORDER BY id LIMIT 100;
 -- name: DeleteEvent :exec
 DELETE FROM space_events WHERE id=$1;
+-- name: GetSpaceAreaTiles :many
+SELECT x, y, area_id FROM space_area_tiles WHERE space_id=$1;

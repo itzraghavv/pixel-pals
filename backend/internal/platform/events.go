@@ -9,6 +9,14 @@ import (
 	"time"
 )
 
+const SpaceUpdatesChannel = "space.updated"
+
+type SpaceUpdated struct {
+	Type    string `json:"type"`
+	SpaceID string `json:"spaceId"`
+	EventID int64  `json:"eventId"`
+}
+
 // DeliverEvents provides at-least-once delivery. Consumers reload idempotently.
 // API replicas may publish duplicate invalidations; only acknowledged rows are removed.
 func DeliverEvents(ctx context.Context, q db.Querier, r *redis.Client, log *slog.Logger) {
@@ -23,8 +31,8 @@ func DeliverEvents(ctx context.Context, q db.Querier, r *redis.Client, log *slog
 			rows, e := q.PendingEvents(work)
 			if e == nil {
 				for _, event := range rows {
-					body, _ := json.Marshal(map[string]any{"type": "space.updated", "spaceId": event.SpaceID, "eventId": event.ID})
-					if e = r.Publish(work, "space.updated", body).Err(); e != nil {
+					body, _ := json.Marshal(SpaceUpdated{Type: SpaceUpdatesChannel, SpaceID: event.SpaceID, EventID: event.ID})
+					if e = r.Publish(work, SpaceUpdatesChannel, body).Err(); e != nil {
 						break
 					}
 					if e = q.DeleteEvent(work, event.ID); e != nil {

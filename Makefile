@@ -1,6 +1,8 @@
-.PHONY: api test migrate seed generate infra
+.PHONY: api realtime test migrate seed generate infra
 api:
 	cd backend && go run ./cmd/api
+realtime:
+	cd backend && go run ./cmd/realtime
 test:
 	cd backend && go test -race ./...
 migrate:

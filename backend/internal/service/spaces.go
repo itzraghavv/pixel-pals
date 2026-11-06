@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"github.com/itzraghavv/pixel-pals/backend/internal/auth"
 	"github.com/itzraghavv/pixel-pals/backend/internal/store/db"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -85,26 +86,39 @@ func (s *Service) owned(ctx context.Context, q db.Querier, id, uid string) (db.S
 	}
 	return space, nil
 }
+
+var ErrSpaceMembership = errors.New("space membership required")
+
+// AuthorizeSpace shares the owner and membership policy between HTTP and WebSocket entry points.
+func AuthorizeSpace(ctx context.Context, q interface {
+	GetSpace(context.Context, string) (db.Space, error)
+	IsMember(context.Context, db.IsMemberParams) (bool, error)
+}, id, uid string) (db.Space, error) {
+	space, err := q.GetSpace(ctx, id)
+	if err != nil || space.CreatorID == uid {
+		return space, err
+	}
+	member, err := q.IsMember(ctx, db.IsMemberParams{SpaceID: id, UserID: uid})
+	if err == nil && !member {
+		err = ErrSpaceMembership
+	}
+	return space, err
+}
+
 func (s *Service) GetSpace(ctx context.Context, id, uid string) (db.Space, []db.GetSpaceElementsRow, error) {
-	space, e := s.Repo.GetSpace(ctx, id)
-	if Missing(e) {
+	space, e := AuthorizeSpace(ctx, s.Repo, id, uid)
+	switch {
+	case Missing(e):
 		return space, nil, s.spaceMissing()
-	}
-	if e != nil {
+	case errors.Is(e, ErrSpaceMembership):
+		return space, nil, Fail(403, "NOT_MEMBER", "Space membership required")
+	case e != nil:
 		return space, nil, e
-	}
-	if space.CreatorID != uid {
-		member, e := s.Repo.IsMember(ctx, db.IsMemberParams{SpaceID: id, UserID: uid})
-		if e != nil {
-			return space, nil, e
-		}
-		if !member {
-			return space, nil, Fail(403, "NOT_MEMBER", "Space membership required")
-		}
 	}
 	els, e := s.Repo.GetSpaceElements(ctx, id)
 	return space, els, e
 }
+
 func (s *Service) DeleteSpace(ctx context.Context, id, uid string) error {
 	return s.Repo.Transaction(ctx, func(q db.Querier) error {
 		if _, e := s.owned(ctx, q, id, uid); e != nil {

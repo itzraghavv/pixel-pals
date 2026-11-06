@@ -16,7 +16,34 @@ type Config struct {
 }
 
 func Load() (Config, error) {
-	c := Config{Port: env("HTTP_PORT", "8080"), DatabaseURL: os.Getenv("DATABASE_URL"), RedisURL: os.Getenv("REDIS_URL"), JWTSecret: os.Getenv("JWT_SECRET"), Env: env("APP_ENV", "production"), Origins: strings.FieldsFunc(os.Getenv("CORS_ORIGINS"), func(r rune) bool { return r == ',' }), S3Endpoint: os.Getenv("S3_ENDPOINT"), S3Region: env("S3_REGION", "us-east-1"), S3Bucket: os.Getenv("S3_BUCKET"), S3AccessKey: os.Getenv("S3_ACCESS_KEY"), S3SecretKey: os.Getenv("S3_SECRET_KEY"), S3PublicURL: os.Getenv("S3_PUBLIC_URL")}
+	return load("HTTP_PORT", "8080")
+}
+
+type RealtimeConfig struct {
+	Config
+	AllowOverlap    bool
+	ProximityRadius int
+}
+
+func LoadRealtime() (RealtimeConfig, error) {
+	base, err := load("REALTIME_PORT", "8081")
+	c := RealtimeConfig{Config: base}
+	if err != nil {
+		return c, err
+	}
+	c.AllowOverlap, err = strconv.ParseBool(env("ALLOW_TILE_OVERLAP", "true"))
+	if err != nil {
+		return c, fmt.Errorf("ALLOW_TILE_OVERLAP: %w", err)
+	}
+	c.ProximityRadius, err = strconv.Atoi(env("PROXIMITY_RADIUS", "3"))
+	if err != nil || c.ProximityRadius < 0 || c.ProximityRadius > 1000 {
+		return c, fmt.Errorf("PROXIMITY_RADIUS must be between 0 and 1000")
+	}
+	return c, nil
+}
+
+func load(portKey, defaultPort string) (Config, error) {
+	c := Config{Port: env(portKey, defaultPort), DatabaseURL: os.Getenv("DATABASE_URL"), RedisURL: os.Getenv("REDIS_URL"), JWTSecret: os.Getenv("JWT_SECRET"), Env: env("APP_ENV", "production"), Origins: strings.FieldsFunc(os.Getenv("CORS_ORIGINS"), func(r rune) bool { return r == ',' }), S3Endpoint: os.Getenv("S3_ENDPOINT"), S3Region: env("S3_REGION", "us-east-1"), S3Bucket: os.Getenv("S3_BUCKET"), S3AccessKey: os.Getenv("S3_ACCESS_KEY"), S3SecretKey: os.Getenv("S3_SECRET_KEY"), S3PublicURL: os.Getenv("S3_PUBLIC_URL")}
 	var err error
 	if c.Compat, err = strconv.ParseBool(env("COMPAT_V0", "false")); err != nil {
 		return c, fmt.Errorf("COMPAT_V0: %w", err)
@@ -38,7 +65,7 @@ func Load() (Config, error) {
 	}
 	port, e := strconv.Atoi(c.Port)
 	if e != nil || port < 1 || port > 65535 {
-		return c, fmt.Errorf("invalid HTTP_PORT")
+		return c, fmt.Errorf("invalid %s", portKey)
 	}
 	for i, o := range c.Origins {
 		c.Origins[i] = strings.TrimSpace(o)

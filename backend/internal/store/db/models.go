@@ -66,6 +66,13 @@ type Space struct {
 	CreatedAt    pgtype.Timestamptz
 }
 
+type SpaceAreaTile struct {
+	SpaceID string
+	X       int32
+	Y       int32
+	AreaID  string
+}
+
 type SpaceElement struct {
 	ID        string
 	SpaceID   string

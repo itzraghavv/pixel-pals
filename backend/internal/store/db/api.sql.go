@@ -419,6 +419,36 @@ func (q *Queries) GetSpace(ctx context.Context, id string) (Space, error) {
 	return i, err
 }
 
+const getSpaceAreaTiles = `-- name: GetSpaceAreaTiles :many
+SELECT x, y, area_id FROM space_area_tiles WHERE space_id=$1
+`
+
+type GetSpaceAreaTilesRow struct {
+	X      int32
+	Y      int32
+	AreaID string
+}
+
+func (q *Queries) GetSpaceAreaTiles(ctx context.Context, spaceID string) ([]GetSpaceAreaTilesRow, error) {
+	rows, err := q.db.Query(ctx, getSpaceAreaTiles, spaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetSpaceAreaTilesRow{}
+	for rows.Next() {
+		var i GetSpaceAreaTilesRow
+		if err := rows.Scan(&i.X, &i.Y, &i.AreaID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getSpaceElements = `-- name: GetSpaceElements :many
 SELECT se.id,se.element_id,se.x,se.y,e.width,e.height,e.static,e.image_url FROM space_elements se JOIN elements e ON e.id=se.element_id WHERE se.space_id=$1 ORDER BY se.id
 `
