@@ -71,6 +71,23 @@ services:
       migrate: {condition: service_completed_successfully}
       redis: {condition: service_healthy}
       minio-init: {condition: service_completed_successfully}
+  realtime:
+    build:
+      context: backend
+      target: realtime
+    environment:
+      REALTIME_PORT: '8081'
+      DATABASE_URL: postgres://pals:pals@postgres:5432/pals?sslmode=disable
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET to a random secret of at least 32 bytes}
+      COMPAT_V0: 'true'
+      CORS_ORIGINS: http://localhost:3000
+      ALLOW_TILE_OVERLAP: 'true'
+      PROXIMITY_RADIUS: '3'
+    ports: ['127.0.0.1:8081:8081']
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
 volumes:
   postgres-data:
   minio-data:
