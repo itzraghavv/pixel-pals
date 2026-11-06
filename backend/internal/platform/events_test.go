@@ -51,30 +51,43 @@ func TestRedisDeliveryAndRateLimit(t *testing.T) {
 	defer client.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-	sub := client.Subscribe(ctx, "space.updated")
+	sub := client.Subscribe(ctx, SpaceUpdatesChannel)
 	defer sub.Close()
 	if _, e = sub.Receive(ctx); e != nil {
 		t.Fatal(e)
 	}
-	repo := &eventRepo{events: []db.SpaceEvent{{ID: 1, SpaceID: "delivery-test"}}}
+	spaceID := service.ID()
+	repo := &eventRepo{events: []db.SpaceEvent{{ID: 1, SpaceID: spaceID}}}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		DeliverEvents(ctx, repo, client, slog.New(slog.NewJSONHandler(io.Discard, nil)))
 	}()
-	message, e := sub.ReceiveMessage(ctx)
-	if e != nil {
-		t.Fatal(e)
+	defer func() { cancel(); <-done }()
+	for {
+		message, e := sub.ReceiveMessage(ctx)
+		if e != nil {
+			t.Fatal(e)
+		}
+		var event SpaceUpdated
+		if e = json.Unmarshal([]byte(message.Payload), &event); e != nil || event.SpaceID != spaceID {
+			continue
+		}
+		if event.Type != SpaceUpdatesChannel || event.EventID != 1 {
+			t.Fatal(message)
+		}
+		break
 	}
-	var event map[string]any
-	if e = json.Unmarshal([]byte(message.Payload), &event); e != nil || event["spaceId"] != "delivery-test" || event["type"] != "space.updated" {
-		t.Fatal(message, e)
-	}
-	cancel()
-	<-done
-	rows, _ := repo.PendingEvents(context.Background())
-	if len(rows) != 0 {
-		t.Fatal("delivered event not acknowledged")
+	for {
+		rows, _ := repo.PendingEvents(ctx)
+		if len(rows) == 0 {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("delivered event not acknowledged")
+		case <-time.After(10 * time.Millisecond):
+		}
 	}
 	limiter := LimitSignIn(client)
 	key := service.ID()
