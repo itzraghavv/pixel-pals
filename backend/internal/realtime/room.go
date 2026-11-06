@@ -1,0 +1,218 @@
+package realtime
+
+import (
+	"context"
+	"errors"
+	"sync"
+	"time"
+)
+
+const (
+	closeJoin     = 4001
+	closeAccess   = 4003
+	closeMissing  = 4004
+	closeSlow     = 4008
+	closeReplaced = 4009
+)
+
+type message struct {
+	Type    string `json:"type"`
+	Payload any    `json:"payload"`
+}
+
+type closeReason struct {
+	code    int
+	message string
+}
+
+type identity struct {
+	UserID    string `json:"userId"`
+	AvatarURL string `json:"avatarUrl"`
+	Username  string `json:"username"`
+}
+
+type presence struct {
+	identity
+	point
+	ID string `json:"id,omitempty"`
+}
+
+type client struct {
+	identity
+	out      chan message
+	stopped  chan struct{}
+	stopOnce sync.Once
+	reason   closeReason
+}
+
+func newClient() *client {
+	return &client{out: make(chan message, 64), stopped: make(chan struct{})}
+}
+
+func (c *client) stop(reason closeReason) {
+	c.stopOnce.Do(func() {
+		c.reason = reason
+		close(c.stopped)
+	})
+}
+
+type participant struct {
+	client   *client
+	position point
+}
+
+type room struct {
+	commands chan func()
+	done     chan struct{}
+	players  map[string]participant
+	grid     grid
+	compat   bool
+}
+
+func newRoom(compat bool) *room {
+	return &room{
+		commands: make(chan func()), done: make(chan struct{}),
+		players: make(map[string]participant), compat: compat,
+	}
+}
+
+func (r *room) run(ctx context.Context, idle time.Duration) {
+	timer := time.NewTimer(idle)
+	defer close(r.done)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			for _, player := range r.players {
+				player.client.stop(closeReason{1012, "Service restart"})
+			}
+			return
+		case <-timer.C:
+			return
+		case command := <-r.commands:
+			wasEmpty := len(r.players) == 0
+			command()
+			switch {
+			case wasEmpty && len(r.players) > 0:
+				timer.Stop()
+			case !wasEmpty && len(r.players) == 0:
+				timer.Reset(idle)
+			}
+		}
+	}
+}
+
+// Once a command is accepted, wait for its result even if the caller disconnects.
+// This lets the caller clean up an accepted join before returning.
+func (r *room) call(ctx context.Context, command func()) bool {
+	finished := make(chan struct{})
+	select {
+	case <-ctx.Done():
+		return false
+	case <-r.done:
+		return false
+	case r.commands <- func() { command(); close(finished) }:
+		<-finished
+		return true
+	}
+}
+
+var errNoSpawn = errors.New("space has no free spawn tile")
+
+func (r *room) join(c *client) error {
+	position, ok := r.grid.spawn(func(point) bool { return false })
+	if !ok {
+		return errNoSpawn
+	}
+
+	self := r.presence(participant{c, position})
+	users := make([]presence, 0, len(r.players))
+	for id, player := range r.players {
+		if id != c.UserID {
+			users = append(users, r.presence(player))
+		}
+	}
+	var spawn *point
+	if r.compat {
+		spawn = &position
+	}
+	c.out <- message{"space-joined", struct {
+		Self  presence   `json:"self"`
+		Users []presence `json:"users"`
+		Spawn *point     `json:"spawn,omitempty"`
+	}{self, users, spawn}}
+
+	if old, exists := r.players[c.UserID]; exists {
+		old.client.stop(closeReason{closeReplaced, "Session replaced"})
+	}
+	r.players[c.UserID] = participant{c, position}
+	r.broadcast(c.UserID, message{"user-joined", self})
+	return nil
+}
+
+func (r *room) presence(p participant) presence {
+	result := presence{identity: p.client.identity, point: p.position}
+	if r.compat {
+		result.ID = result.UserID
+	}
+	return result
+}
+
+func (r *room) move(c *client, target point) {
+	player, exists := r.players[c.UserID]
+	if !exists || player.client != c {
+		return
+	}
+	dir := direction(player.position, target)
+	if dir == "" || !r.grid.free(target) {
+		if !r.send(c, message{"movement-rejected", player.position}) {
+			r.leave(c)
+		}
+		return
+	}
+	player.position = target
+	r.players[c.UserID] = player
+	r.broadcast(c.UserID, message{"movement", struct {
+		UserID string `json:"userId"`
+		point
+		Direction string `json:"dir"`
+	}{c.UserID, target, dir}})
+}
+
+func (r *room) leave(c *client) {
+	if player, exists := r.players[c.UserID]; exists && player.client == c {
+		delete(r.players, c.UserID)
+		r.broadcast("", message{"user-left", map[string]string{"userId": c.UserID}})
+	}
+}
+
+func (r *room) send(c *client, msg message) bool {
+	select {
+	case <-c.stopped:
+		return false
+	default:
+	}
+	select {
+	case c.out <- msg:
+		return true
+	default:
+		c.stop(closeReason{closeSlow, "Slow consumer"})
+		return false
+	}
+}
+
+func (r *room) broadcast(except string, msg message) {
+	pending := []message{msg}
+	for len(pending) > 0 {
+		current := pending[0]
+		pending = pending[1:]
+		for id, player := range r.players {
+			if id == except || r.send(player.client, current) {
+				continue
+			}
+			delete(r.players, id)
+			pending = append(pending, message{"user-left", map[string]string{"userId": id}})
+		}
+		except = ""
+	}
+}
