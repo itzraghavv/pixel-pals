@@ -36,8 +36,7 @@ func (r *room) updateProximity() {
 			if areas[i] != areas[j] {
 				continue
 			}
-			other := positions[j]
-			if areas[i] == "" && (abs(pos.X-other.X) > r.proximityRadius || abs(pos.Y-other.Y) > r.proximityRadius) {
+			if areas[i] == "" && !r.near(pos, positions[j]) {
 				continue
 			}
 			a, b := root(i), root(j)
@@ -84,8 +83,31 @@ func (r *room) updateProximity() {
 		}
 		if !r.send(player.client, message{"proximity", current}) {
 			r.leave(player.client)
+			return
 		}
 	}
+}
+
+// Moving without changing any proximity edge leaves every component intact.
+func (r *room) proximityEdgesChanged(id string, from, to point) bool {
+	area := r.grid.areas[from]
+	if area != r.grid.areas[to] {
+		return true
+	}
+	if area != "" {
+		return false
+	}
+	for other, player := range r.players {
+		if other != id && r.grid.areas[player.position] == "" &&
+			r.near(from, player.position) != r.near(to, player.position) {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *room) near(a, b point) bool {
+	return abs(a.X-b.X) <= r.proximityRadius && abs(a.Y-b.Y) <= r.proximityRadius
 }
 
 func abs(value int) int {

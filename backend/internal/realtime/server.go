@@ -64,6 +64,7 @@ func NewServer(repo Repository, tokens auth.Tokens, options Options, log *slog.L
 		repo: repo, tokens: tokens, options: options, log: log, metrics: newMetrics(),
 		ctx: ctx, cancel: cancel, rooms: make(map[string]*room), clients: make(map[*client]struct{}),
 	}
+	s.upgrader.HandshakeTimeout = writeTimeout
 	s.upgrader.CheckOrigin = func(r *http.Request) bool {
 		originsSent := r.Header.Values("Origin")
 		if len(originsSent) == 0 {
@@ -129,7 +130,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		<-done
 	}()
 
-	conn.SetReadLimit(4096)
+	conn.SetReadLimit(8192)
 	deadline := time.Now().Add(joinTimeout)
 	_ = conn.SetReadDeadline(deadline)
 	var first inbound
@@ -185,9 +186,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 				X *int `json:"x"`
 				Y *int `json:"y"`
 			}
-			if json.Unmarshal(msg.Payload, &target) == nil && target.X != nil && target.Y != nil {
-				r.call(s.ctx, func() { r.move(c, point{*target.X, *target.Y}) })
+			if json.Unmarshal(msg.Payload, &target) != nil || target.X == nil || target.Y == nil {
+				r.call(s.ctx, func() { r.rejectMove(c) })
+				continue
 			}
+			r.call(s.ctx, func() { r.move(c, point{*target.X, *target.Y}) })
 		case "chat":
 			var chat struct {
 				Text string `json:"text"`
@@ -365,10 +368,10 @@ func (s *Server) writePump(conn *websocket.Conn, c *client) {
 	write := func(msg delivery) error {
 		_ = conn.SetWriteDeadline(time.Now().Add(writeTimeout))
 		var err error
-		if msg.wire == nil {
+		if msg.frame == nil {
 			err = conn.WriteJSON(msg.message)
 		} else {
-			err = conn.WriteMessage(websocket.TextMessage, msg.wire)
+			err = conn.WritePreparedMessage(msg.frame)
 		}
 		if err == nil {
 			s.metrics.out.Inc()

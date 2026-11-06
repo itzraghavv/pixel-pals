@@ -135,6 +135,8 @@ func TestWebSocketMovement(t *testing.T) {
 	if got := string(read(t, a, "pong")); got != "{\"t\":123}" {
 		t.Fatalf("pong payload %s", got)
 	}
+	send(t, a, "move", map[string]int{"x": 0})
+	read(t, a, "movement-rejected")
 	send(t, a, "move", point{10, 10})
 	if got := read(t, a, "movement-rejected"); !strings.Contains(string(got), "\"x\":") {
 		t.Fatalf("rejection %s", got)

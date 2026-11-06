@@ -6,6 +6,8 @@ import (
 	"errors"
 	"sync"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 const (
@@ -23,7 +25,7 @@ type message struct {
 
 type delivery struct {
 	message
-	wire []byte
+	frame *websocket.PreparedMessage
 }
 
 type closeReason struct {
@@ -53,7 +55,7 @@ type client struct {
 }
 
 func newClient() *client {
-	return &client{out: make(chan delivery, 64), stopped: make(chan struct{})}
+	return &client{out: make(chan delivery, 256), stopped: make(chan struct{})}
 }
 
 func (c *client) stop(reason closeReason) {
@@ -212,16 +214,22 @@ func (r *room) move(c *client, target point) {
 	}
 	dir := direction(player.position, target)
 	if dir == "" || !r.grid.free(target) || r.occupied(target, c.UserID) {
+		r.rejectMove(c)
+		return
+	}
+	r.proximityDirty = r.proximityDirty || r.proximityEdgesChanged(c.UserID, player.position, target)
+	player.position = target
+	player.direction = dir
+	r.players[c.UserID] = player
+	r.broadcastMovement(player, c.UserID)
+}
+
+func (r *room) rejectMove(c *client) {
+	if player, exists := r.players[c.UserID]; exists && player.client == c {
 		if !r.send(c, message{"movement-rejected", player.position}) {
 			r.leave(c)
 		}
-		return
 	}
-	player.position = target
-	player.direction = dir
-	r.proximityDirty = true
-	r.players[c.UserID] = player
-	r.broadcastMovement(player, c.UserID)
 }
 
 func (r *room) broadcastMovement(player participant, except string) {
@@ -269,7 +277,8 @@ func (r *room) broadcast(except string, msg message) {
 		current := pending[0]
 		pending = pending[1:]
 		wire, _ := json.Marshal(current)
-		out := delivery{message: current, wire: wire}
+		frame, _ := websocket.NewPreparedMessage(websocket.TextMessage, wire)
+		out := delivery{message: current, frame: frame}
 		for id, player := range r.players {
 			if id == except || r.enqueue(player.client, out) {
 				continue

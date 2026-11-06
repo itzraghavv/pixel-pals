@@ -57,3 +57,31 @@ func expectTypes(t *testing.T, c *client, types ...string) {
 		t.Fatalf("unexpected message: %v", <-c.out)
 	}
 }
+
+func TestRoomEvictsSlowConsumer(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	r := newRoom(false)
+	r.grid, _ = newGrid(db.Space{Width: 3, Height: 1}, nil)
+	a, b, slow := newClient(), newClient(), newClient()
+	a.UserID, b.UserID, slow.UserID = "a", "b", "slow"
+	r.players[a.UserID] = participant{client: a, position: point{0, 0}}
+	r.players[b.UserID] = participant{client: b, position: point{2, 0}}
+	r.players[slow.UserID] = participant{client: slow, position: point{2, 0}}
+	for range cap(slow.out) {
+		slow.out <- delivery{}
+	}
+	go r.run(ctx, time.Minute)
+	if !r.call(ctx, func() { r.move(a, point{1, 0}); r.leave(slow) }) {
+		t.Fatal("room unavailable")
+	}
+	select {
+	case <-slow.stopped:
+		if slow.reason.code != closeSlow {
+			t.Fatalf("close code = %d", slow.reason.code)
+		}
+	default:
+		t.Fatal("slow consumer remained connected")
+	}
+	expectTypes(t, b, "movement", "user-left")
+}
