@@ -43,7 +43,9 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	ws := realtime.NewServer(store.New(pool), auth.Tokens{Secret: []byte(c.JWTSecret)}, c.Origins, c.Compat, log)
+	ws := realtime.NewServer(store.New(pool), auth.Tokens{Secret: []byte(c.JWTSecret)}, realtime.Options{
+		Origins: c.Origins, Compat: c.Compat, AllowOverlap: c.AllowOverlap,
+	}, log)
 	mux := http.NewServeMux()
 	mux.Handle("GET /ws", ws)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })

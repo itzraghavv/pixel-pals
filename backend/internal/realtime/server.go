@@ -6,8 +6,10 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gorilla/websocket"
 	"github.com/itzraghavv/pixel-pals/backend/internal/auth"
@@ -31,10 +33,16 @@ type Repository interface {
 	BulkMetadata(context.Context, []string) ([]db.BulkMetadataRow, error)
 }
 
+type Options struct {
+	Origins      []string
+	Compat       bool
+	AllowOverlap bool
+}
+
 type Server struct {
 	repo     Repository
 	tokens   auth.Tokens
-	compat   bool
+	options  Options
 	log      *slog.Logger
 	upgrader websocket.Upgrader
 
@@ -46,10 +54,10 @@ type Server struct {
 	connections sync.WaitGroup
 }
 
-func NewServer(repo Repository, tokens auth.Tokens, origins []string, compat bool, log *slog.Logger) *Server {
+func NewServer(repo Repository, tokens auth.Tokens, options Options, log *slog.Logger) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Server{
-		repo: repo, tokens: tokens, compat: compat, log: log,
+		repo: repo, tokens: tokens, options: options, log: log,
 		ctx: ctx, cancel: cancel, rooms: make(map[string]*room), clients: make(map[*client]struct{}),
 	}
 	s.upgrader.CheckOrigin = func(r *http.Request) bool {
@@ -60,7 +68,7 @@ func NewServer(repo Repository, tokens auth.Tokens, origins []string, compat boo
 		if len(originsSent) != 1 {
 			return false
 		}
-		for _, allowed := range origins {
+		for _, allowed := range options.Origins {
 			if originsSent[0] == allowed {
 				return true
 			}
@@ -152,6 +160,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	defer r.call(s.ctx, func() { r.leave(c) })
 	conn.SetPongHandler(func(string) error { return conn.SetReadDeadline(time.Now().Add(pongTimeout)) })
 	_ = conn.SetReadDeadline(time.Now().Add(pongTimeout))
+	moves, chats := newBucket(20, 20), newBucket(5, 10)
 	for {
 		msg, ok, err := readMessage(conn)
 		if err != nil {
@@ -162,12 +171,23 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 		switch msg.Type {
 		case "move":
+			if !moves.allow(time.Now()) {
+				continue
+			}
 			var target struct {
 				X *int `json:"x"`
 				Y *int `json:"y"`
 			}
 			if json.Unmarshal(msg.Payload, &target) == nil && target.X != nil && target.Y != nil {
 				r.call(s.ctx, func() { r.move(c, point{*target.X, *target.Y}) })
+			}
+		case "chat":
+			var chat struct {
+				Text string `json:"text"`
+			}
+			if json.Unmarshal(msg.Payload, &chat) == nil && strings.TrimSpace(chat.Text) != "" &&
+				utf8.RuneCountInString(chat.Text) <= 500 && chats.allow(time.Now()) {
+				r.call(s.ctx, func() { r.chat(c, chat.Text) })
 			}
 		case "ping":
 			var ping struct {
@@ -282,7 +302,8 @@ func (s *Server) getRoom(spaceID string) *room {
 			return r
 		}
 	}
-	r := newRoom(s.compat)
+	r := newRoom(s.options.Compat)
+	r.allowOverlap = s.options.AllowOverlap
 	s.rooms[spaceID] = r
 	go func() {
 		r.run(s.ctx, roomIdle)

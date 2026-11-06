@@ -62,17 +62,18 @@ type participant struct {
 }
 
 type room struct {
-	commands chan func()
-	done     chan struct{}
-	players  map[string]participant
-	grid     grid
-	compat   bool
+	commands     chan func()
+	done         chan struct{}
+	players      map[string]participant
+	grid         grid
+	compat       bool
+	allowOverlap bool
 }
 
 func newRoom(compat bool) *room {
 	return &room{
 		commands: make(chan func()), done: make(chan struct{}),
-		players: make(map[string]participant), compat: compat,
+		players: make(map[string]participant), compat: compat, allowOverlap: true,
 	}
 }
 
@@ -120,7 +121,7 @@ func (r *room) call(ctx context.Context, command func()) bool {
 var errNoSpawn = errors.New("space has no free spawn tile")
 
 func (r *room) join(c *client) error {
-	position, ok := r.grid.spawn(func(point) bool { return false })
+	position, ok := r.spawn(c.UserID)
 	if !ok {
 		return errNoSpawn
 	}
@@ -150,6 +151,29 @@ func (r *room) join(c *client) error {
 	return nil
 }
 
+func (r *room) spawn(except string) (point, bool) {
+	occupied := make(map[point]bool)
+	if !r.allowOverlap {
+		for id, player := range r.players {
+			if id != except {
+				occupied[player.position] = true
+			}
+		}
+	}
+	return r.grid.spawn(func(p point) bool { return occupied[p] })
+}
+
+func (r *room) occupied(p point, except string) bool {
+	if !r.allowOverlap {
+		for id, player := range r.players {
+			if id != except && player.position == p {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (r *room) presence(p participant) presence {
 	result := presence{identity: p.client.identity, point: p.position}
 	if r.compat {
@@ -164,7 +188,7 @@ func (r *room) move(c *client, target point) {
 		return
 	}
 	dir := direction(player.position, target)
-	if dir == "" || !r.grid.free(target) {
+	if dir == "" || !r.grid.free(target) || r.occupied(target, c.UserID) {
 		if !r.send(c, message{"movement-rejected", player.position}) {
 			r.leave(c)
 		}

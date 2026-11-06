@@ -19,8 +19,22 @@ func Load() (Config, error) {
 	return load("HTTP_PORT", "8080")
 }
 
-func LoadRealtime() (Config, error) {
-	return load("REALTIME_PORT", "8081")
+type RealtimeConfig struct {
+	Config
+	AllowOverlap bool
+}
+
+func LoadRealtime() (RealtimeConfig, error) {
+	base, err := load("REALTIME_PORT", "8081")
+	c := RealtimeConfig{Config: base}
+	if err != nil {
+		return c, err
+	}
+	c.AllowOverlap, err = strconv.ParseBool(env("ALLOW_TILE_OVERLAP", "true"))
+	if err != nil {
+		return c, fmt.Errorf("ALLOW_TILE_OVERLAP: %w", err)
+	}
+	return c, nil
 }
 
 func load(portKey, defaultPort string) (Config, error) {
